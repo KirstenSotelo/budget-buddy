@@ -304,7 +304,7 @@ button {
 
 .coach-card {
   display: grid;
-  align-content: center;
+  align-content: start;
   min-height: 250px;
   padding: 28px;
 }
@@ -317,7 +317,7 @@ button {
 
 .coach-card h3 {
   max-width: 38rem;
-  font-size: 2.35rem;
+  font-size: 2rem;
   line-height: 1.08;
 }
 
@@ -330,7 +330,48 @@ button {
 
 .coach-card .ghost-button {
   justify-self: start;
-  margin-top: 22px;
+}
+
+.attention-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.attention-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--panel-soft);
+  padding: 11px 12px;
+}
+
+.attention-item span {
+  display: grid;
+  gap: 3px;
+}
+
+.attention-item strong {
+  color: var(--ink);
+  font-size: 0.92rem;
+}
+
+.attention-item small {
+  color: var(--muted);
+  font-size: 0.76rem;
+  line-height: 1.35;
+}
+
+.attention-item button {
+  border: 0;
+  background: transparent;
+  color: var(--green-dark);
+  font-size: 0.78rem;
+  font-weight: 900;
+  white-space: nowrap;
 }
 
 .stats-grid {

@@ -4,6 +4,7 @@ import { type FormEvent, useMemo, useState } from "react";
 
 type View = "Today" | "Spend" | "Save" | "Income" | "Coach";
 type MonthId = "2025-07" | "2025-08" | "2025-09";
+type MonthMode = "past" | "current" | "future";
 type ExpenseType = "Daily" | "Fixed";
 type Mood = "Worth it" | "Needed" | "Oops";
 type BillFrequency = "Weekly" | "Biweekly" | "Monthly" | "Yearly";
@@ -267,6 +268,7 @@ export default function Home() {
   const [actionMessage, setActionMessage] = useState("");
   const monthId = monthOrder[monthIndex];
   const month = monthData[monthId];
+  const monthMode: MonthMode = monthIndex < 1 ? "past" : monthIndex > 1 ? "future" : "current";
 
   const allExpenses = useMemo(
     () => [...addedExpenses, ...startingExpenses],
@@ -478,7 +480,7 @@ export default function Home() {
         <header className="topbar">
           <div>
             <p className="eyebrow">{activeView}</p>
-            <h2>{getViewTitle(activeView, month.monthLabel)}</h2>
+            <h2>{getViewTitle(activeView, month.monthLabel, monthMode)}</h2>
           </div>
           <div className="topbar-actions">
             <MonthNavigator
@@ -509,7 +511,10 @@ export default function Home() {
 
         {activeView === "Today" && (
           <TodayView
+            bills={bills}
             month={month}
+            monthId={monthId}
+            monthMode={monthMode}
             goals={savingGoals}
             incomeEntries={allIncome.filter((entry) => entry.monthId === monthId)}
             onAddExpense={() => setActiveModal("expense")}
@@ -665,9 +670,12 @@ function MonthNavigator({
 }
 
 function TodayView({
+  bills,
   goals,
   incomeEntries,
   month,
+  monthId,
+  monthMode,
   onAddExpense,
   onAddIncome,
   onAddSaving,
@@ -676,9 +684,12 @@ function TodayView({
   spendVerdict,
   totals,
 }: {
+  bills: Bill[];
   goals: Goal[];
   incomeEntries: IncomeEntry[];
   month: MonthSnapshot;
+  monthId: MonthId;
+  monthMode: MonthMode;
   onAddExpense: () => void;
   onAddIncome: () => void;
   onAddSaving: (goalName?: string) => void;
@@ -694,6 +705,99 @@ function TodayView({
     dailyPace: number;
   };
 }) {
+  const monthBills = bills.filter(
+    (bill) => (bill.statuses[monthId] ?? "Upcoming") === "Upcoming",
+  );
+  const upcomingBillTotal = monthBills.reduce((sum, bill) => sum + bill.amount, 0);
+  const leadingCategory = [...month.categories].sort(
+    (a, b) => b.spent / b.limit - a.spent / a.limit,
+  )[0];
+
+  const attentionItems = (() => {
+    if (monthMode === "past") {
+      return [
+        ...(monthBills.length > 0
+          ? [{
+              title: `${monthBills.length} bill${monthBills.length === 1 ? " is" : "s are"} unresolved`,
+              detail: `${exactMoney.format(upcomingBillTotal)} is still marked upcoming for ${month.monthName}.`,
+              action: "Review bills",
+              onAction: () => setActiveView("Spend"),
+            }]
+          : []),
+        {
+          title: `${money.format(Math.max(totals.safeToSpend, 0))} left at month end`,
+          detail: `${month.monthName} closed after spending, bills, and savings were covered.`,
+          action: "See the math",
+          onAction: () => document.querySelector(".money-math")?.scrollIntoView({ behavior: "smooth" }),
+        },
+        {
+          title: `${leadingCategory.name} came closest to its guide`,
+          detail: `${money.format(leadingCategory.spent)} spent out of ${money.format(leadingCategory.limit)}.`,
+          action: "Review spending",
+          onAction: () => setActiveView("Spend"),
+        },
+      ].slice(0, 3);
+    }
+
+    if (monthMode === "future") {
+      return [
+        {
+          title: `${money.format(totals.income)} expected`,
+          detail: `Review the income you expect to receive in ${month.monthName}.`,
+          action: "Review income",
+          onAction: () => setActiveView("Income"),
+        },
+        {
+          title: `${money.format(upcomingBillTotal)} in scheduled bills`,
+          detail: `${monthBills.length} bill${monthBills.length === 1 ? " is" : "s are"} already planned for ${month.monthName}.`,
+          action: "Review bills",
+          onAction: () => setActiveView("Spend"),
+        },
+        {
+          title: `${money.format(totals.savingsSetAside)} planned for savings`,
+          detail: "Make sure your goal plan still fits before the month begins.",
+          action: "Review goals",
+          onAction: () => setActiveView("Save"),
+        },
+      ];
+    }
+
+    const categoryRatio = leadingCategory.limit > 0
+      ? leadingCategory.spent / leadingCategory.limit
+      : 0;
+
+    return [
+      ...(monthBills.length > 0
+        ? [{
+            title: `${money.format(upcomingBillTotal)} in bills still coming`,
+            detail: `${monthBills.length} bill${monthBills.length === 1 ? " needs" : "s need"} attention before ${month.monthName} ends.`,
+            action: "Review bills",
+            onAction: () => setActiveView("Spend"),
+          }]
+        : []),
+      ...(categoryRatio >= 0.75
+        ? [{
+            title: `${leadingCategory.name} is at ${Math.round(categoryRatio * 100)}%`,
+            detail: `${money.format(leadingCategory.limit - leadingCategory.spent)} remains before reaching its guide.`,
+            action: "View spending",
+            onAction: () => setActiveView("Spend"),
+          }]
+        : []),
+      {
+        title: `${money.format(totals.dailyPace)} is your daily pace`,
+        detail: `Staying near this amount keeps bills and savings protected for the next ${month.daysLeft} days.`,
+        action: "Check a purchase",
+        onAction: () => setActiveView("Spend"),
+      },
+    ].slice(0, 3);
+  })();
+
+  const attentionHeading = {
+    current: "What needs your attention",
+    past: `${month.monthName} review`,
+    future: `Plan ahead for ${month.monthName}`,
+  }[monthMode];
+
   return (
     <>
       <section className="hero-panel">
@@ -707,8 +811,21 @@ function TodayView({
           </span>
         </div>
         <div className="coach-card">
-          <p className="eyebrow">Today check-in</p>
-          <h3>{month.insight}</h3>
+          <p className="eyebrow">
+            {monthMode === "current" ? "Today" : monthMode === "past" ? "Past month" : "Future month"}
+          </p>
+          <h3>{attentionHeading}</h3>
+          <div className="attention-list">
+            {attentionItems.map((item) => (
+              <div className="attention-item" key={item.title}>
+                <span>
+                  <strong>{item.title}</strong>
+                  <small>{item.detail}</small>
+                </span>
+                <button onClick={item.onAction} type="button">{item.action}</button>
+              </div>
+            ))}
+          </div>
           <div className="hero-actions">
             <button className="ghost-button" onClick={onAddIncome} type="button">
               Add income
@@ -721,29 +838,6 @@ function TodayView({
             </button>
           </div>
         </div>
-      </section>
-
-      <section className="stats-grid" aria-label="Budget summary">
-        <SummaryCard
-          helper={`Pay, allowance, or other income expected for ${month.monthLabel}.`}
-          label="Money in this month"
-          value={money.format(totals.income)}
-        />
-        <SummaryCard
-          helper={`Purchases and paid bills logged as of ${month.asOf}.`}
-          label="Spent so far"
-          value={money.format(totals.spentSoFar)}
-        />
-        <SummaryCard
-          helper="Reserved for your goals, so it is not counted as spending money."
-          label="Set aside for savings"
-          value={money.format(totals.savingsSetAside)}
-        />
-        <SummaryCard
-          helper={`Essential and optional bills still planned before ${month.monthName} ends.`}
-          label="Bills still coming"
-          value={money.format(totals.billsStillComing)}
-        />
       </section>
 
       <section className="content-grid">
@@ -1958,9 +2052,15 @@ function getSpendVerdict(amount: number, safeToSpend: number) {
   };
 }
 
-function getViewTitle(view: View, monthLabel: string) {
+function getViewTitle(view: View, monthLabel: string, monthMode: MonthMode) {
+  const todayTitle = {
+    past: `See how ${monthLabel} worked out.`,
+    current: "Here's where your money stands.",
+    future: `Get ready for ${monthLabel}.`,
+  }[monthMode];
+
   const titles = {
-    Today: `${monthLabel} money snapshot.`,
+    Today: todayTitle,
     Spend: "Expenses and bills, together.",
     Save: "Make goals feel doable.",
     Income: "Track every kind of money in.",
